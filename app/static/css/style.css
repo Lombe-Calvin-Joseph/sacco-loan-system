@@ -1,0 +1,55 @@
+/* SACCO Loan Application System - Custom Styles */
+
+body {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+main {
+    flex: 1;
+}
+
+.navbar-brand {
+    font-weight: bold;
+}
+
+.card {
+    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+}
+
+.table th {
+    background-color: #f8f9fa;
+}
+
+.badge {
+    font-size: 0.9em;
+}
+
+/* Security indicators */
+.security-notice {
+    border-left: 4px solid #0d6efd;
+}
+
+/* Form styling */
+.form-label {
+    font-weight: 600;
+}
+
+.invalid-feedback {
+    display: block;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .table-responsive {
+        font-size: 0.875rem;
+    }
+}
+
+/* Print styles for audit logs */
+@media print {
+    .navbar, .btn, form {
+        display: none;
+    }
+}

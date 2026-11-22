@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+
+{% block title %}Member Dashboard{% endblock %}
+
+{% block content %}
+<h2>My Loan Applications</h2>
+
+<div class="mb-3">
+    <a href="{{ url_for('member.apply_loan') }}" class="btn btn-primary">Apply for New Loan</a>
+</div>
+
+{% if loans %}
+<div class="table-responsive">
+    <table class="table table-hover">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Amount</th>
+                <th>Duration</th>
+                <th>Status</th>
+                <th>Applied On</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for loan in loans %}
+            <tr>
+                <td>{{ loan.id }}</td>
+                <td>ZMW {{ "%.2f"|format(loan.amount) }}</td>
+                <td>{{ loan.duration_months }} months</td>
+                <td>
+                    <span class="badge bg-{{ 'warning' if loan.status == 'pending' else 'info' if loan.status == 'under_review' else 'success' if loan.status == 'approved' else 'danger' }}">
+                        {{ loan.status|replace('_', ' ')|title }}
+                    </span>
+                </td>
+                <td>{{ loan.created_at.strftime('%Y-%m-%d') }}</td>
+                <td>
+                    <a href="{{ url_for('member.view_loan', loan_id=loan.id) }}" class="btn btn-sm btn-info">View</a>
+                    {% if loan.status == 'pending' %}
+                    <a href="{{ url_for('member.upload_document', loan_id=loan.id) }}" class="btn btn-sm btn-secondary">Upload Doc</a>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="alert alert-info">
+    You haven't submitted any loan applications yet. Click "Apply for New Loan" to get started.
+</div>
+{% endif %}
+{% endblock %}

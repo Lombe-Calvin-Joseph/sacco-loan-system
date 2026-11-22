@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+
+{% block title %}Review Loan #{{ loan.id }}{% endblock %}
+
+{% block content %}
+<h2>Review Loan Application #{{ loan.id }}</h2>
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="card mb-3">
+            <div class="card-header"><h5>Loan Summary</h5></div>
+            <div class="card-body">
+                <p><strong>Member:</strong> {{ loan.applicant.username }}</p>
+                <p><strong>Amount:</strong> ZMW {{ "%.2f"|format(loan.amount) }}</p>
+                <p><strong>Duration:</strong> {{ loan.duration_months }} months</p>
+                <p><strong>Purpose:</strong> {{ loan.purpose }}</p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header"><h5>Submit Review</h5></div>
+            <div class="card-body">
+                <form method="POST" novalidate>
+                    {{ form.hidden_tag() }}
+                    
+                    <div class="mb-3">
+                        {{ form.review_notes.label(class="form-label") }}
+                        {{ form.review_notes(class="form-control", rows="6" + (" is-invalid" if form.review_notes.errors else "")) }}
+                        {% if form.review_notes.errors %}
+                            <div class="invalid-feedback">
+                                {% for error in form.review_notes.errors %}{{ error }}{% endfor %}
+                            </div>
+                        {% endif %}
+                        <small class="form-text text-muted">This will move the loan to "Under Review" status for manager approval</small>
+                    </div>
+                    
+                    <div class="d-grid">
+                        {{ form.submit(class="btn btn-primary") }}
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+
+{% block title %}Apply for Loan{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h3>Apply for Loan</h3>
+            </div>
+            <div class="card-body">
+                <form method="POST" novalidate>
+                    {{ form.hidden_tag() }}
+                    
+                    <div class="mb-3">
+                        {{ form.amount.label(class="form-label") }}
+                        {{ form.amount(class="form-control" + (" is-invalid" if form.amount.errors else "")) }}
+                        {% if form.amount.errors %}
+                            <div class="invalid-feedback">
+                                {% for error in form.amount.errors %}{{ error }}{% endfor %}
+                            </div>
+                        {% endif %}
+                    </div>
+                    
+                    <div class="mb-3">
+                        {{ form.duration_months.label(class="form-label") }}
+                        {{ form.duration_months(class="form-control" + (" is-invalid" if form.duration_months.errors else "")) }}
+                        {% if form.duration_months.errors %}
+                            <div class="invalid-feedback">
+                                {% for error in form.duration_months.errors %}{{ error }}{% endfor %}
+                            </div>
+                        {% endif %}
+                    </div>
+                    
+                    <div class="mb-3">
+                        {{ form.purpose.label(class="form-label") }}
+                        {{ form.purpose(class="form-control", rows="5" + (" is-invalid" if form.purpose.errors else "")) }}
+                        {% if form.purpose.errors %}
+                            <div class="invalid-feedback">
+                                {% for error in form.purpose.errors %}{{ error }}{% endfor %}
+                            </div>
+                        {% endif %}
+                        <small class="form-text text-muted">Please provide detailed information about the purpose of this loan</small>
+                    </div>
+                    
+                    <div class="d-grid">
+                        {{ form.submit(class="btn btn-primary") }}
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

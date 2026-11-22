@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+
+{% block title %}Approve/Reject Loan #{{ loan.id }}{% endblock %}
+
+{% block content %}
+<h2>Approve or Reject Loan Application #{{ loan.id }}</h2>
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="card mb-3">
+            <div class="card-header"><h5>Loan Summary</h5></div>
+            <div class="card-body">
+                <p><strong>Member:</strong> {{ loan.applicant.username }}</p>
+                <p><strong>Amount:</strong> ZMW {{ "%.2f"|format(loan.amount) }}</p>
+                <p><strong>Duration:</strong> {{ loan.duration_months }} months</p>
+                <p><strong>Purpose:</strong> {{ loan.purpose }}</p>
+            </div>
+        </div>
+        
+        <div class="card mb-3">
+            <div class="card-header"><h5>Loan Officer Review</h5></div>
+            <div class="card-body">
+                <p><strong>Reviewed By:</strong> {{ loan.reviewed_by.username }}</p>
+                <p><strong>Review Date:</strong> {{ loan.review_date.strftime('%Y-%m-%d %H:%M') }}</p>
+                <p><strong>Notes:</strong></p>
+                <p>{{ loan.review_notes }}</p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header"><h5>Manager Decision</h5></div>
+            <div class="card-body">
+                <form method="POST" novalidate>
+                    {{ form.hidden_tag() }}
+                    
+                    <div class="mb-3">
+                        {{ form.approval_notes.label(class="form-label") }}
+                        {{ form.approval_notes(class="form-control", rows="8" + (" is-invalid" if form.approval_notes.errors else "")) }}
+                        {% if form.approval_notes.errors %}
+                            <div class="invalid-feedback">
+                                {% for error in form.approval_notes.errors %}{{ error }}{% endfor %}
+                            </div>
+                        {% endif %}
+                    </div>
+                    
+                    <div class="d-grid gap-2">
+                        {{ form.approve(class="btn btn-success btn-lg") }}
+                        {{ form.reject(class="btn btn-danger btn-lg") }}
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

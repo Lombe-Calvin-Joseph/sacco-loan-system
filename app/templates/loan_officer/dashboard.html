@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+
+{% block title %}Loan Officer Dashboard{% endblock %}
+
+{% block content %}
+<h2>Loan Officer Dashboard</h2>
+
+<ul class="nav nav-tabs" role="tablist">
+    <li class="nav-item">
+        <a class="nav-link active" data-bs-toggle="tab" href="#pending">Pending Review ({{ pending_loans|length }})</a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link" data-bs-toggle="tab" href="#under_review">Under Review ({{ under_review_loans|length }})</a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link" data-bs-toggle="tab" href="#processed">Processed</a>
+    </li>
+</ul>
+
+<div class="tab-content mt-3">
+    <div id="pending" class="tab-pane fade show active">
+        <h4>Loans Pending Review</h4>
+        {% if pending_loans %}
+        <table class="table table-hover">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Member</th>
+                    <th>Amount</th>
+                    <th>Duration</th>
+                    <th>Applied On</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for loan in pending_loans %}
+                <tr>
+                    <td>{{ loan.id }}</td>
+                    <td>{{ loan.applicant.username }}</td>
+                    <td>ZMW {{ "%.2f"|format(loan.amount) }}</td>
+                    <td>{{ loan.duration_months }} months</td>
+                    <td>{{ loan.created_at.strftime('%Y-%m-%d') }}</td>
+                    <td>
+                        <a href="{{ url_for('loan_officer.view_loan', loan_id=loan.id) }}" class="btn btn-sm btn-info">View</a>
+                        <a href="{{ url_for('loan_officer.review_loan', loan_id=loan.id) }}" class="btn btn-sm btn-primary">Review</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p>No pending loan applications.</p>
+        {% endif %}
+    </div>
+    
+    <div id="under_review" class="tab-pane fade">
+        <h4>Loans Under Review (Pending Manager Approval)</h4>
+        {% if under_review_loans %}
+        <table class="table table-hover">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Member</th>
+                    <th>Amount</th>
+                    <th>Reviewed By</th>
+                    <th>Review Date</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for loan in under_review_loans %}
+                <tr>
+                    <td>{{ loan.id }}</td>
+                    <td>{{ loan.applicant.username }}</td>
+                    <td>ZMW {{ "%.2f"|format(loan.amount) }}</td>
+                    <td>{{ loan.reviewed_by.username }}</td>
+                    <td>{{ loan.review_date.strftime('%Y-%m-%d') }}</td>
+                    <td>
+                        <a href="{{ url_for('loan_officer.view_loan', loan_id=loan.id) }}" class="btn btn-sm btn-info">View</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p>No loans under review.</p>
+        {% endif %}
+    </div>
+    
+    <div id="processed" class="tab-pane fade">
+        <h4>Recently Processed Loans</h4>
+        {% if processed_loans %}
+        <table class="table table-hover">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Member</th>
+                    <th>Amount</th>
+                    <th>Status</th>
+                    <th>Decision Date</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for loan in processed_loans %}
+                <tr>
+                    <td>{{ loan.id }}</td>
+                    <td>{{ loan.applicant.username }}</td>
+                    <td>ZMW {{ "%.2f"|format(loan.amount) }}</td>
+                    <td><span class="badge bg-{{ 'success' if loan.status == 'approved' else 'danger' }}">{{ loan.status|title }}</span></td>
+                    <td>{{ loan.approval_date.strftime('%Y-%m-%d') if loan.approval_date else 'N/A' }}</td>
+                    <td>
+                        <a href="{{ url_for('loan_officer.view_loan', loan_id=loan.id) }}" class="btn btn-sm btn-info">View</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p>No processed loans.</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

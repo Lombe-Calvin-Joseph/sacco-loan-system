@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+
+{% block title %}Upload Document{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h3>Upload Supporting Document</h3>
+                <p class="mb-0">Loan Application #{{ loan.id }}</p>
+            </div>
+            <div class="card-body">
+                <form method="POST" enctype="multipart/form-data" novalidate>
+                    {{ form.hidden_tag() }}
+                    
+                    <div class="mb-3">
+                        {{ form.document.label(class="form-label") }}
+                        {{ form.document(class="form-control" + (" is-invalid" if form.document.errors else "")) }}
+                        {% if form.document.errors %}
+                            <div class="invalid-feedback">
+                                {% for error in form.document.errors %}{{ error }}{% endfor %}
+                            </div>
+                        {% endif %}
+                        <small class="form-text text-muted">Allowed: PDF, JPG, JPEG, PNG. Max size: 5MB</small>
+                    </div>
+                    
+                    <div class="d-grid">
+                        {{ form.submit(class="btn btn-primary") }}
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
