@@ -42,9 +42,7 @@ def login():
         
         # Verify password
         if not user.check_password(form.password.data):
-            user.record_failed_login(
-                max_attempts=bp.root_path.split('/')[-1] if hasattr(bp, 'root_path') else 5
-            )
+            user.record_failed_login(max_attempts=5, lockout_duration=900)
             log_login_attempt(user.username, False, "Invalid password")
             flash('Invalid username or password.', 'danger')
             return render_template('auth/login.html', form=form)
