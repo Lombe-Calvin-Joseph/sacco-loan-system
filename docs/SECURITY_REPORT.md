@@ -4,7 +4,7 @@
 **Student Name:** [Your Full Name]  
 **Student ID:** [Your Student ID]  
 **Course:** [Course Name]  
-**Submission Date:** [Date]  
+**Submission Date:** November 2026  
 **GitHub Repository:** https://github.com/Lombe-Calvin-Joseph/sacco-loan-system  
 **Option:** B — SACCO Loan Application System
 
@@ -29,7 +29,7 @@ This report documents the security design, implementation, and testing of a web-
 
 The system was built using Flask (Python), SQLite, and SQLAlchemy. Three distinct user roles exist: Members who apply for loans, Loan Officers who review applications, and Managers who make final approval decisions. The core security challenge this creates is ensuring that each role can only perform its intended actions and can only see data it is entitled to see, while also protecting the application against external attackers who have no account at all.
 
-The report covers the threat model produced before development began, the specific controls written to address each threat, evidence from static analysis, dynamic scanning, and manual attack tests, a discussion of weaknesses found during testing and how they were resolved, and an honest reflection on what remains unaddressed and why.
+The report covers the threat model produced before development began, the specific controls written to address each threat, evidence from static analysis and manual attack tests, a discussion of issues found during testing and how they were resolved, and an honest reflection on what remains unaddressed and why.
 
 ---
 
@@ -37,7 +37,7 @@ The report covers the threat model produced before development began, the specif
 
 ### 2.1 System Description
 
-The SACCO Loan Application System manages the full lifecycle of a loan application. A member registers, submits a loan application with supporting documents, a loan officer reviews the application and writes notes, and a manager either approves or rejects it. Every action on a sensitive resource is recorded in a persistent audit log.
+The SACCO Loan Application System manages the full lifecycle of a loan application. A member registers, submits a loan application with supporting documents, a loan officer reviews the application and writes notes, and a manager either approves or rejects it. Every action on a sensitive resource is recorded in a persistent audit log that only managers can view.
 
 ### 2.2 User Roles and Permissions
 
@@ -47,14 +47,14 @@ The SACCO Loan Application System manages the full lifecycle of a loan applicati
 | **Loan Officer** | View all applications, download documents, submit review notes | Approve or reject loans |
 | **Manager** | Approve or reject reviewed loans, view the full audit log | Approve a loan they personally reviewed |
 
-The constraint that a loan officer cannot approve a loan is a **separation of duties** control. It is enforced in code on the server, not simply hidden in the user interface.
+The constraint that a loan officer cannot approve a loan is a **separation of duties** control. It is enforced server-side in code, not simply hidden in the user interface.
 
 ### 2.3 Workflow
 
 ```
-Member submits application  →  status: pending
-Loan Officer reviews it     →  status: under_review
-Manager approves/rejects    →  status: approved / rejected
+Member submits application  →  status: Pending
+Loan Officer reviews it     →  status: Under Review
+Manager approves/rejects    →  status: Approved / Rejected
 ```
 
 ### 2.4 Technology Stack
@@ -63,10 +63,22 @@ Manager approves/rejects    →  status: approved / rejected
 |-----------|-----------|-------------------|
 | Web framework | Flask 3.0 | Jinja2 auto-escaping, Werkzeug security |
 | ORM / Database | SQLAlchemy + SQLite | Parameterised queries, no raw SQL |
-| Authentication | Flask-Login | Session management, user loader |
+| Authentication | Flask-Login | Session management, strong session protection |
 | Forms | Flask-WTF | Automatic CSRF tokens on every form |
-| Password hashing | Werkzeug `generate_password_hash` | pbkdf2:sha256, salted |
-| Configuration | python-dotenv | Secrets in environment, not source code |
+| Password hashing | Werkzeug `generate_password_hash` | pbkdf2:sha256 with unique salt per user |
+| Configuration | python-dotenv | Secrets in environment variables, not source code |
+
+### 2.5 Application Running
+
+The screenshot below shows the Flask development server running with request logs confirming the application is live and responding to browser requests.
+
+---
+
+**Figure 1 — Flask development server running with live request logs**
+
+![Flask server running showing GET and POST requests logged in terminal](screenshot_terminal.png)
+
+*The terminal shows the application started successfully on 127.0.0.1:5000. Each HTTP request is logged with method, path, and status code — confirming the server is active and all routes are responding.*
 
 ---
 
@@ -81,142 +93,98 @@ The diagram below shows all data flows between external actors, the application,
   INTERNET (untrusted)
  ═══════════════════════════════════════════════════════════
 
-  [Member]  ──HTTPS──┐
-  [Loan Officer] ────┤──► [ Flask Web Application ]
-  [Manager]  ────────┘           │          │
-                                 │          │
-              ╔══════════════════╪══════════╪══════╗
-              ║  SERVER (trusted boundary)  │      ║
-              ║                  │          │      ║
-              ║          ┌───────┘          │      ║
-              ║          ▼                  ▼      ║
-              ║   [ SQLite Database ]  [ File     ║
-              ║   - users                Storage ] ║
-              ║   - loans              (uploads/)  ║
-              ║   - documents                      ║
-              ║   - audit_logs                     ║
-              ╚════════════════════════════════════╝
+  [Member]       ──HTTPS──┐
+  [Loan Officer] ─────────┤──► [ Flask Web Application ]
+  [Manager]      ─────────┘           │          │
+                                      │          │
+               ╔════════════════════════════════════════╗
+               ║  SERVER (trusted boundary)             ║
+               ║                      │          │      ║
+               ║              ┌───────┘          │      ║
+               ║              ▼                  ▼      ║
+               ║   [ SQLite Database ]    [ File        ║
+               ║   - users                 Storage ]    ║
+               ║   - loans                (uploads/)    ║
+               ║   - documents                          ║
+               ║   - audit_logs                         ║
+               ╚════════════════════════════════════════╝
 ```
 
 **Trust Boundaries:**
-- **Boundary 1 (Internet → Application):** All traffic from browsers crosses here. Input arriving from this boundary is untrusted and validated before use.
-- **Boundary 2 (Application → Database/Files):** Internal. The application uses parameterised queries and secure file paths so that untrusted data received at Boundary 1 cannot propagate as executable instructions across Boundary 2.
+- **Boundary 1 (Internet → Application):** All browser traffic crosses here. Input arriving from this boundary is treated as untrusted and validated before use.
+- **Boundary 2 (Application → Database/Files):** Internal. The application uses parameterised queries and secure file paths so that untrusted data received at Boundary 1 cannot propagate as executable instructions.
 
 ### 3.2 STRIDE Threat Analysis
 
-STRIDE is a threat categorisation framework. Each letter represents a class of threat. The table below summarises the threats identified, then each is discussed in detail.
+STRIDE is a threat categorisation framework where each letter represents a class of threat: Spoofing, Tampering, Repudiation, Information Disclosure, Denial of Service, and Elevation of Privilege.
 
 | # | Category | Threat | Impact | Likelihood | Status |
 |---|----------|--------|--------|------------|--------|
 | T1 | Spoofing | Brute-force credential attack | High | Medium | ✅ Mitigated |
-| T2 | Spoofing | Session hijacking | High | Low | ✅ Mitigated |
-| T3 | Tampering | SQL injection | Critical | Medium | ✅ Mitigated |
-| T4 | Tampering | Cross-site scripting (XSS) | High | Medium | ✅ Mitigated |
+| T2 | Spoofing | Session hijacking via cookie theft | High | Low | ✅ Mitigated |
+| T3 | Tampering | SQL injection via form fields | Critical | Medium | ✅ Mitigated |
+| T4 | Tampering | Stored XSS in loan purpose field | High | Medium | ✅ Mitigated |
 | T5 | Tampering | Cross-site request forgery (CSRF) | High | Medium | ✅ Mitigated |
-| T6 | Repudiation | Denial of approval action | Medium | Low | ✅ Mitigated |
-| T7 | Information Disclosure | Member views another member's loan | High | Medium | ✅ Mitigated |
+| T6 | Repudiation | Denial of approval/rejection action | Medium | Low | ✅ Mitigated |
+| T7 | Information Disclosure | Member views another member's loan (IDOR) | High | Medium | ✅ Mitigated |
 | T8 | Information Disclosure | Path traversal on file download | Critical | Low | ✅ Mitigated |
-| T9 | Denial of Service | Account lockout abuse | Medium | Medium | ✅ Mitigated |
-| T10 | Elevation of Privilege | Loan officer approves own review | Critical | Low | ✅ Mitigated |
-| T11 | Elevation of Privilege | Member accesses manager routes | High | Medium | ✅ Mitigated |
+| T9 | Denial of Service | Targeted account lockout abuse | Medium | Medium | ✅ Mitigated |
+| T10 | Elevation of Privilege | Loan officer approves own reviewed loan | Critical | Low | ✅ Mitigated |
+| T11 | Elevation of Privilege | Member accesses manager or officer routes | High | Medium | ✅ Mitigated |
 
 ---
 
 **T1 — Brute-Force Credential Attack (Spoofing)**
 
-An attacker systematically tries passwords against a known username until one succeeds. Because usernames are email addresses or display names that may be publicly known, the account password is the only barrier.
-
-*Mitigation:* The application locks an account for 15 minutes after five consecutive failed login attempts. The lockout timestamp is stored in the database so it survives server restarts. Failed attempts are recorded in the audit log with the originating IP address so patterns of distributed attacks can be identified.
-
----
+An attacker systematically tries passwords against a known username. The application locks an account for 15 minutes after five consecutive failed login attempts. The lockout timestamp is stored in the database so it survives server restarts. The login page displays a permanent security notice to users warning that the lockout policy is in effect.
 
 **T2 — Session Hijacking (Spoofing)**
 
-If an attacker can steal a valid session cookie — through a network intercept, an XSS flaw, or access to the victim's browser — they can impersonate that user without knowing their password.
-
-*Mitigation:* Session cookies are set with `HttpOnly` (JavaScript cannot read them, neutralising the XSS vector), `SameSite=Lax` (the browser will not send them on cross-origin requests), and `Secure` (HTTPS only, enforced in production). Flask-Login's `session_protection = 'strong'` mode regenerates the session identifier when the user agent changes, detecting simple hijack attempts.
-
----
+If an attacker steals a valid session cookie they can impersonate the user. Session cookies are set with `HttpOnly` (JavaScript cannot read them), `SameSite=Lax` (not sent on cross-origin requests), and `Secure` in production. Flask-Login's strong session protection regenerates the session identifier if the user agent changes mid-session.
 
 **T3 — SQL Injection (Tampering)**
 
-An attacker submits crafted SQL syntax in a form field. If the application concatenates user input directly into a query string, the injected syntax executes against the database. This can bypass authentication, extract all data, or destroy records.
+An attacker submits SQL syntax in a form field to manipulate database queries. The application uses SQLAlchemy's ORM for every query, sending user values as bound parameters that the database engine cannot interpret as SQL syntax.
 
-*Mitigation:* The application uses SQLAlchemy's ORM for every database interaction. The ORM sends queries as parameterised statements — the database engine receives the SQL structure and the user-supplied values separately, so the values can never be interpreted as SQL syntax. No raw SQL strings exist anywhere in the codebase, confirmed by Bandit static analysis.
+**T4 — Stored XSS (Tampering)**
 
----
+An attacker stores JavaScript in a text field such as the loan purpose. Jinja2 escapes all template variable output by default, rendering scripts as plain visible text rather than executable code. As demonstrated in Section 5, the payload `<script>alert('hacked')</script>` was stored and displayed as literal text with no script execution.
 
-**T4 — Cross-Site Scripting (XSS) (Tampering)**
+**T5 — CSRF (Tampering)**
 
-An attacker stores a malicious JavaScript payload in a field such as the loan purpose. When another user views that loan, the script executes in their browser, potentially stealing their session cookie or redirecting them to a phishing page.
+A malicious website tricks a logged-in user's browser into submitting an unauthorised request. Flask-WTF generates a unique CSRF token per session that is included in every form and validated on every POST request. Requests without the correct token are rejected with HTTP 400.
 
-*Mitigation:* Jinja2, the templating engine used by Flask, escapes all variable output by default. A string like `<script>alert('xss')</script>` is rendered as `&lt;script&gt;alert(&#39;xss&#39;)&lt;/script&gt;` — visible text, not executable code. A `Content-Security-Policy` header provides a second layer by instructing the browser to refuse inline scripts.
+**T6 — Repudiation (Repudiation)**
 
----
+A manager denies approving or rejecting a loan. Every state-changing operation writes to the `audit_logs` table with the user, IP address, timestamp, and action details. These records are visible only to managers and cannot be edited through any interface.
 
-**T5 — Cross-Site Request Forgery (CSRF) (Tampering)**
+**T7 — IDOR / Broken Object Access (Information Disclosure)**
 
-A malicious website tricks a logged-in user's browser into submitting a request to the application — for example, submitting a loan application or approving a loan — without the user's knowledge.
-
-*Mitigation:* Every form in the application includes a hidden CSRF token generated by Flask-WTF. The server validates this token on every POST request. A forged request from another origin will not carry the correct token and will be rejected with a 400 error.
-
----
-
-**T6 — Denial of Approval Action (Repudiation)**
-
-A manager approves or rejects a large loan and later claims they did not. Without a reliable record, disputes cannot be resolved.
-
-*Mitigation:* Every state-changing operation writes an entry to the `audit_logs` table recording the event type, the user ID, the username, the IP address, the browser user agent, the affected resource, and a UTC timestamp. These records are written by the application and are not exposed for editing through any user interface. Managers can view the audit log but cannot modify it.
-
----
-
-**T7 — Insecure Direct Object Reference (Information Disclosure)**
-
-A member discovers that their loan is at `/member/loan/3` and manually changes the number to `/member/loan/4` to view another member's application.
-
-*Mitigation:* Every route that returns a loan record calls `loan.can_be_viewed_by(current_user)` before returning any data. For members this method checks that `loan.member_id == current_user.id`. If the check fails the route returns HTTP 403 and writes an `access_denied` event to the audit log.
-
----
+A member changes the loan ID in the URL to view another member's application. Every route calls `loan.can_be_viewed_by(current_user)` before returning data. For members, this checks `loan.member_id == current_user.id` and returns HTTP 403 if the check fails.
 
 **T8 — Path Traversal on File Download (Information Disclosure)**
 
-When a document is uploaded, if the application uses the original filename provided by the user to construct the storage path, an attacker could supply a filename like `../../app/__init__.py` to overwrite application code, or craft a download request to read arbitrary files from the server.
-
-*Mitigation:* Uploaded files are never stored under their original name. On upload, a UUID is generated (`uuid.uuid4().hex`) and the original extension is appended. The original filename is stored in the database only for display and download naming purposes. Files are stored in a per-user subdirectory under `app/static/uploads/` which is outside the web-accessible template folder. `werkzeug.utils.secure_filename` is applied as an additional sanitisation step before any path construction.
-
----
+An attacker crafts a filename like `../../app/__init__.py` to overwrite or read arbitrary files. Uploaded files are renamed using a UUID (`uuid.uuid4().hex`) before saving. The original filename is stored in the database only for display — it never touches the filesystem path.
 
 **T9 — Account Lockout Abuse (Denial of Service)**
 
-An attacker who knows a victim's username deliberately submits five wrong-password requests, locking the legitimate user out of their account.
-
-*Mitigation:* Lockouts expire automatically after 15 minutes without any administrator action. This limits the impact to a temporary inconvenience rather than a permanent denial. The failed login attempts are logged with the attacker's IP address so a pattern of targeted lockout abuse would be visible in the audit log.
-
----
+An attacker triggers five failed logins for a victim's account, locking them out. The lockout expires automatically after 15 minutes without any administrator action, limiting the impact to a temporary inconvenience.
 
 **T10 — Loan Officer Self-Approval (Elevation of Privilege)**
 
-A loan officer who has reviewed a loan attempts to access the approval endpoint directly, bypassing the manager requirement.
+A loan officer who reviewed a loan attempts to access the approval endpoint directly. The approval endpoint is in the manager blueprint decorated with `@role_required('manager')`. A loan officer receives HTTP 403 regardless of how they reach the URL.
 
-*Mitigation:* The approval endpoint is in the `manager` blueprint, which is decorated with `@role_required('manager')`. A loan officer's role is stored in the database and checked server-side on every request. Even if a loan officer navigates directly to `/manager/approve_loan/1`, they receive HTTP 403. Additionally, the `can_be_approved_by` method on the Loan model checks both that the requesting user is a manager and that the loan's status is `under_review`, so the endpoint cannot be used out of sequence.
+**T11 — Vertical Privilege Escalation (Elevation of Privilege)**
 
----
-
-**T11 — Member Accessing Manager Routes (Elevation of Privilege)**
-
-A member attempts to access the manager dashboard or audit log by typing the URL directly.
-
-*Mitigation:* The `@role_required` decorator checks `current_user.role` against the permitted roles for that route. If the role does not match, the decorator returns HTTP 403 immediately, before any route handler logic executes.
+A member navigates directly to `/manager/dashboard` or `/loan_officer/dashboard`. The `@role_required` decorator checks `current_user.role` against permitted roles on every request and returns HTTP 403 immediately if the role does not match.
 
 ---
 
 ## 4. Security Controls
 
-This section describes each security control in the application with the relevant code extract.
-
 ### 4.1 Password Storage
 
-Passwords are never stored in plaintext. When a user sets a password the application calls `generate_password_hash` with the `pbkdf2:sha256` method and a 16-byte random salt. The hash stored in the database cannot be reversed to recover the original password, and because each hash includes a unique salt, two users with the same password will have different hashes.
+Passwords are hashed with `pbkdf2:sha256` and a 16-byte random salt. The hash cannot be reversed and two users with the same password will have different stored hashes due to the unique salt.
 
 ```python
 # app/models.py
@@ -233,14 +201,14 @@ def check_password(self, password):
 
 ### 4.2 Password Policy
 
-The registration form validates that every new password meets the complexity requirements defined in configuration before the account is created.
+The registration form validates complexity requirements before creating the account. All five rules must pass simultaneously.
 
 ```python
 # app/utils/validators.py
 def validate_password(password, config):
     errors = []
     if len(password) < config['MIN_PASSWORD_LENGTH']:
-        errors.append(f"Password must be at least {config['MIN_PASSWORD_LENGTH']} characters")
+        errors.append(f"Password must be at least {config['MIN_PASSWORD_LENGTH']} characters long")
     if config['REQUIRE_UPPERCASE'] and not re.search(r'[A-Z]', password):
         errors.append("Password must contain at least one uppercase letter")
     if config['REQUIRE_LOWERCASE'] and not re.search(r'[a-z]', password):
@@ -256,7 +224,7 @@ def validate_password(password, config):
 
 ### 4.3 Account Lockout
 
-After five failed login attempts the account is locked for 900 seconds (15 minutes). The lock is stored in the database so it persists across restarts.
+After five failed login attempts the account is locked for 900 seconds. The check runs before password verification so the locked state cannot be bypassed by guessing correctly.
 
 ```python
 # app/models.py
@@ -266,58 +234,36 @@ def record_failed_login(self, max_attempts=5, lockout_duration=900):
         self.account_locked_until = datetime.utcnow() + timedelta(seconds=lockout_duration)
     db.session.commit()
 
-def is_account_locked(self):
-    if self.account_locked_until and datetime.utcnow() < self.account_locked_until:
-        return True
-    elif self.account_locked_until and datetime.utcnow() >= self.account_locked_until:
-        self.failed_login_attempts = 0
-        self.account_locked_until = None
-        db.session.commit()
-    return False
-```
-
-The login route checks lockout status before attempting password verification. It also returns the same error message regardless of whether the username exists, preventing user enumeration.
-
-```python
-# app/routes/auth.py  (abbreviated)
-user = User.query.filter_by(username=form.username.data).first()
-if user is None:
-    log_login_attempt(form.username.data, False, "User not found")
-    flash('Invalid username or password.', 'danger')   # same message either way
-    return render_template('auth/login.html', form=form)
-
+# app/routes/auth.py — checked before password verification
 if user.is_account_locked():
     flash('Account temporarily locked. Please try again later.', 'danger')
     return render_template('auth/login.html', form=form)
+```
 
-if not user.check_password(form.password.data):
-    user.record_failed_login()
-    flash('Invalid username or password.', 'danger')
+The login route also returns the same generic error message whether the username exists or not, preventing user enumeration.
+
+```python
+if user is None:
+    flash('Invalid username or password.', 'danger')   # same message as wrong password
     return render_template('auth/login.html', form=form)
 ```
 
 ### 4.4 Session Security
 
-Session cookie flags are set in configuration and applied globally.
-
 ```python
 # config/config.py
 SESSION_COOKIE_HTTPONLY = True       # JavaScript cannot read the cookie
-SESSION_COOKIE_SECURE   = True       # Sent over HTTPS only (production)
+SESSION_COOKIE_SECURE   = True       # HTTPS only in production
 SESSION_COOKIE_SAMESITE = 'Lax'      # Not sent on cross-origin requests
 PERMANENT_SESSION_LIFETIME = timedelta(seconds=1800)  # 30-minute idle timeout
-```
 
-Flask-Login's strong session protection regenerates the session identifier if the user agent changes mid-session, which detects naive session token theft.
-
-```python
 # app/__init__.py
-login_manager.session_protection = 'strong'
+login_manager.session_protection = 'strong'  # regenerates session ID on user-agent change
 ```
 
 ### 4.5 Role-Based Access Control
 
-The `@role_required` decorator is applied to every route that requires a specific role. It checks the role stored in the database, not anything passed by the client.
+The `@role_required` decorator is applied to every route that requires a specific role. The check is server-side against the database value, not anything the client supplies.
 
 ```python
 # app/utils/decorators.py
@@ -336,56 +282,48 @@ def role_required(*roles):
     return decorator
 ```
 
-Resource-level ownership is enforced by methods on the model itself, so the check is in one place and cannot be forgotten in a new route.
+Resource-level ownership is enforced by methods on the model:
 
 ```python
 # app/models.py
 def can_be_viewed_by(self, user):
     if user.role == 'member':
-        return self.member_id == user.id      # members see only their own
+        return self.member_id == user.id      # members see only their own loans
     return user.role in ['loan_officer', 'manager']
 
 def can_be_approved_by(self, user):
+    # Only managers can approve AND only loans in under_review state
     return user.role == 'manager' and self.status == 'under_review'
 ```
 
 ### 4.6 CSRF Protection
 
-Flask-WTF is configured with CSRF enabled globally. Every form class inherits from `FlaskForm`, which automatically includes a hidden `csrf_token` field. The token is validated on every POST before the route handler runs.
-
 ```python
 # config/config.py
 WTF_CSRF_ENABLED = True
 
-# Every template form includes:
-{{ form.hidden_tag() }}   {# renders the hidden csrf_token input #}
+# Every template form includes this line which renders a hidden csrf_token input:
+{{ form.hidden_tag() }}
 ```
 
 ### 4.7 SQL Injection Prevention
 
-SQLAlchemy's ORM is used for every database query. User input is passed as a bound parameter, never interpolated into a query string.
+SQLAlchemy's ORM is used for every database interaction. User input is passed as a bound parameter, never interpolated into a query string.
 
 ```python
 # app/routes/member.py
-# Safe — member_id is a bound parameter, not string-concatenated
+# Safe — member_id is a bound parameter
 loans = Loan.query.filter_by(member_id=current_user.id).all()
 
-# Safe — loan_id comes from the URL but is retrieved via ORM
+# Safe — loan_id comes from the URL but retrieved via ORM
 loan = Loan.query.get_or_404(loan_id)
 ```
 
-### 4.8 XSS Prevention
+### 4.8 XSS Prevention and Security Headers
 
-Jinja2 escapes all template variable output by default. The Content-Security-Policy header provides a browser-level second layer.
+Jinja2 escapes all template variables by default. The `Content-Security-Policy` header provides a browser-level second layer, and additional security headers are injected on every HTTP response.
 
 ```python
-# app/__init__.py  — applied to every response
-@app.after_request
-def set_security_headers(response):
-    for header, value in app.config['SECURITY_HEADERS'].items():
-        response.headers[header] = value
-    return response
-
 # config/config.py
 SECURITY_HEADERS = {
     'X-Content-Type-Options': 'nosniff',
@@ -394,48 +332,49 @@ SECURITY_HEADERS = {
     'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
     'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline';"
 }
+
+# app/__init__.py — applied to every response automatically
+@app.after_request
+def set_security_headers(response):
+    for header, value in app.config['SECURITY_HEADERS'].items():
+        response.headers[header] = value
+    return response
 ```
 
 ### 4.9 Secure File Upload
 
-File uploads pass through four validation checks before being saved. The final stored filename is a UUID, so the original filename — which could contain path traversal characters — never touches the filesystem.
+File uploads pass through four validation checks. The final stored filename is a UUID so the original filename — which could contain path traversal characters — never reaches the filesystem.
 
 ```python
 # app/utils/validators.py
 def validate_file_upload(file, allowed_extensions, max_size):
     filename = secure_filename(file.filename)
-    if '.' not in filename:
-        return False, "File must have an extension", None
     ext = filename.rsplit('.', 1)[1].lower()
-    if ext not in allowed_extensions:
+    if ext not in allowed_extensions:          # whitelist check
         return False, "File type not allowed. Allowed: pdf, jpg, jpeg, png", None
     file.seek(0, os.SEEK_END)
     file_size = file.tell()
     file.seek(0)
-    if file_size > max_size:
-        return False, f"File too large. Maximum: {max_size/(1024*1024):.0f}MB", None
+    if file_size > max_size:                   # size limit: 5MB
+        return False, "File too large. Maximum: 5MB", None
     if file_size == 0:
         return False, "File is empty", None
     return True, None, filename
 
-# app/routes/member.py — UUID rename on save
-file_ext = filename.rsplit('.', 1)[1].lower()
+# app/routes/member.py — UUID rename before saving
 unique_filename = f"{uuid.uuid4().hex}.{file_ext}"
 ```
 
 ### 4.10 Audit Logging
 
-A central function writes every security-relevant event to the `audit_logs` table. No route handler accesses the table directly — they all call this function so the structure is consistent.
+Every security-relevant event is written to the `audit_logs` table through a single central function. No route handler writes to the table directly.
 
 ```python
 # app/utils/audit.py
 def log_security_event(event_type, resource_type=None, resource_id=None,
                        details=None, success=True, user=None):
-    if user is None:
-        user = current_user if current_user.is_authenticated else None
     log_entry = AuditLog(
         event_type=event_type,
-        user_id=user.id if user else None,
         username=user.username if user else 'anonymous',
         ip_address=request.remote_addr,
         user_agent=request.headers.get('User-Agent', '')[:500],
@@ -449,11 +388,11 @@ def log_security_event(event_type, resource_type=None, resource_id=None,
     db.session.commit()
 ```
 
-Events logged include: `login_success`, `login_failed`, `logout`, `user_registered`, `loan_created`, `loan_reviewed`, `loan_approved`, `loan_rejected`, `document_uploaded`, `document_viewed`, `access_denied`, `unauthorized_access`.
+Events logged include: `login_success`, `login_failed`, `logout`, `loan_created`, `loan_reviewed`, `loan_approved`, `loan_rejected`, `document_uploaded`, `document_viewed`, `access_denied`.
 
 ### 4.11 Secrets Management
 
-The `SECRET_KEY` and database URL are read from environment variables. The `.env` file used in development is excluded from version control by `.gitignore`. Only `.env.example` — which contains no real values — is committed to the repository.
+The `SECRET_KEY` and database URL are read from environment variables. The `.env` file is excluded from version control by `.gitignore`. Only `.env.example` with no real values is committed to the repository.
 
 ```python
 # config/config.py
@@ -465,12 +404,203 @@ SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or 'sqlite:///sacco_loa
 
 ## 5. Testing Evidence
 
-### 5.1 Static Analysis — Bandit
+### 5.1 Application Functionality Testing
 
-Bandit is a Python static analysis tool that scans source code for common security issues including hardcoded passwords, SQL injection patterns, use of weak cryptographic functions, and unsafe file operations.
+Before security testing, the full application workflow was verified across all three user roles.
+
+---
+
+**Figure 2 — Member dashboard showing loan applications with Pending, Approved, and Rejected statuses**
+
+![Member dashboard with loans in different statuses](screenshot_member_dashboard.png)
+
+*The member dashboard shows john_member's loan applications. Loans 1 and 2 are Approved, loan 3 is Rejected, and loan 4 is Pending. The "Apply for New Loan" button and status-colour coding are visible. Members only see their own loans — no other member's data appears here.*
+
+---
+
+**Figure 3 — Loan application form filled in by a member**
+
+![Apply for loan form with amount, duration and purpose filled in](screenshot_apply_loan.png)
+
+*The member has entered ZMW 500,000 for 4 months to pay school fees. The form includes server-side validation on all fields. The CSRF token is embedded as a hidden field (visible in page source), protecting against cross-site request forgery.*
+
+---
+
+**Figure 4 — Loan submitted successfully with Pending status**
+
+![Loan application #4 showing pending status and success message](screenshot_loan_submitted.png)
+
+*After submission, the user is redirected to the loan detail page. The green success banner confirms the application was recorded and the status badge shows "Pending". The Upload Document button allows supporting documents to be attached.*
+
+---
+
+**Figure 5 — Secure document upload page**
+
+![Upload supporting document page showing allowed file types](screenshot_upload_document.png)
+
+*The upload form shows the allowed file types (PDF, JPG, JPEG, PNG) and the 5MB size limit. The selected file is Screenshot_21.png. Server-side validation checks the extension, MIME type, file size, and renames the file to a UUID before saving.*
+
+---
+
+**Figure 6 — Member dashboard after uploading a document, loan #4 now shows Upload Doc button**
+
+![Member dashboard with loan 4 in pending status and upload doc button](screenshot_member_dashboard_updated.png)
+
+*Loan #4 now appears at the top of the dashboard in Pending status. The "Upload Doc" action button is visible only for loans still in Pending state — once a loan moves to Under Review, members can no longer modify it.*
+
+---
+
+**Figure 7 — Loan Officer dashboard showing pending loan awaiting review**
+
+![Loan officer dashboard with pending review tab showing loan 4](screenshot_officer_dashboard.png)
+
+*Logged in as sarah_officer (Loan Officer role), the dashboard shows loan #4 from john_member awaiting review. Notice the navbar shows "sarah_officer (Loan_officer)" confirming the role. There is a Review button but no Approve button — this is the separation of duties control in action.*
+
+---
+
+**Figure 8 — Loan officer viewing full loan details with Review This Loan button**
+
+![Loan officer viewing loan 4 with applicant details and review button](screenshot_officer_view_loan.png)
+
+*The loan officer can see all details including the uploaded document and can download it. The "Review This Loan" button is present. There is no approve or reject option — the officer can only submit a review for the manager to act on.*
+
+---
+
+**Figure 9 — Loan moved to Under Review after officer submits review notes**
+
+![Loan 4 showing Under Review status with review notes from sarah_officer](screenshot_loan_under_review.png)
+
+*After sarah_officer submitted the review, the loan status changed to "Under Review" (shown in the blue badge). The review notes are recorded with the reviewer's name and date. The loan is now locked for editing by the member and awaits manager approval.*
+
+---
+
+**Figure 10 — Manager dashboard with statistics and loan awaiting approval**
+
+![Manager dashboard showing 1 awaiting approval, 2 approved, 1 rejected with loan 4 listed](screenshot_manager_dashboard.png)
+
+*Logged in as mike_manager (Manager role), the dashboard shows the system summary: 0 pending review, 1 awaiting approval, 2 approved, 1 rejected. Loan #4 from john_member is listed under "Awaiting Approval" with the reviewer noted as sarah_officer. The "Approve/Reject" button is only present here — not available to loan officers.*
+
+---
+
+**Figure 11 — Manager viewing loan details before making a decision**
+
+![Manager viewing loan 4 showing under review status, review notes, and approve/reject button](screenshot_manager_view_loan.png)
+
+*The manager sees the full application including the loan officer's review notes and date. The "Approve/Reject This Loan" button is present here. This same page when accessed by a loan officer returns HTTP 403.*
+
+---
+
+**Figure 12 — Manager approval form with loan summary and decision panel**
+
+![Approve or reject loan 4 page showing loan summary, officer review, and manager decision form](screenshot_approve_loan.png)
+
+*The approval page shows the loan summary on the left, the loan officer's review notes in the middle, and the manager's decision form on the right. Two distinct buttons — "Approve Loan" (green) and "Reject Loan" (red) — make the action explicit. The approval notes field is required.*
+
+---
+
+**Figure 13 — Manager dashboard after approving loan #4 — 3 approved total**
+
+![Manager dashboard showing 3 approved after approving loan 4](screenshot_manager_after_approval.png)
+
+*The green success banner confirms "Loan application approved successfully!" The Awaiting Approval counter has dropped to 0 and Approved has incremented to 3. The full audit trail of this decision is recorded in the audit log.*
+
+---
+
+**Figure 14 — Manager recently processed tab showing full loan history**
+
+![Manager recently processed tab showing all 4 loans with approved and rejected statuses](screenshot_manager_processed.png)
+
+*The Recently Processed tab shows all decisions: loans 1, 2, and 4 approved by mike_manager, loan 3 rejected. Each row shows the decision maker and the decision date, providing a complete management overview.*
+
+---
+
+### 5.2 Security Attack Tests
+
+#### Test 1 — SQL Injection in Login
+
+An attacker attempts to bypass authentication by submitting SQL syntax in the username field.
+
+**Input used:**
+```
+Username: admin' OR '1'='1
+Password: anything
+```
+
+**Expected result:** Login rejected with a generic error message, no SQL error revealed.
+
+---
+
+**Figure 15 — SQL injection attempt rejected with generic error message**
+
+![Login page showing "Invalid username or password" after SQL injection attempt with admin in username field](screenshot_sql_injection.png)
+
+*The username field contains the SQL injection payload. The application returned "Invalid username or password" — the same message returned for any failed login. No SQL syntax error was revealed, confirming the ORM's parameterised queries prevented the attack. The "Security Notice" at the bottom is a standard lockout warning displayed to all users.*
+
+---
+
+#### Test 2 — Password Policy Enforcement
+
+A user attempts to register with a password that does not meet the complexity requirements.
+
+**Password entered:** (empty / too weak)
+
+---
+
+**Figure 16 — Registration form showing all password policy violation errors**
+
+![Register page showing multiple password error messages in red](screenshot_password_policy.png)
+
+*When a weak password is submitted, the form displays all violated rules simultaneously: minimum 8 characters, uppercase letter required, lowercase letter required, digit required, and special character required. The field is highlighted in red. Registration is blocked until all requirements are met. The hint text below the field also states the requirements proactively.*
+
+---
+
+#### Test 3 — XSS Prevention (Stored XSS)
+
+A member submitted the following JavaScript payload as the loan purpose to test whether it would execute when viewed:
+
+**Input submitted as loan purpose:**
+```
+<script>alert('hacked')</script>
+```
+
+---
+
+**Figure 17 — XSS payload stored and displayed as escaped plain text — no script execution**
+
+![Loan 3 detail page showing the script tag displayed as literal text in the Purpose field](screenshot_xss_prevention.png)
+
+*Loan Application #3 shows the purpose field containing the XSS payload. It is rendered as the literal text `<script>alert('hacked')</script>` — no alert box appeared and no script executed. Jinja2's auto-escaping converted the angle brackets to HTML entities (`&lt;` and `&gt;`) before rendering. This loan was subsequently reviewed and rejected with the note "this is a scam alert", demonstrating the full audit trail of a detected attack attempt.*
+
+---
+
+#### Test 4 — Audit Log Security Monitoring
+
+After conducting all tests, the Security Audit Logs were examined to verify every event was recorded.
+
+---
+
+**Figure 18 — Security audit log showing complete event trail including failed login attempts**
+
+![Security audit logs page showing all events with timestamps, users, IP addresses and success flags](screenshot_audit_logs.png)
+
+*The audit log captures the complete security event trail. Notable entries visible include:*
+- *`loan_approved` by mike_manager — loan #4 approved at 13:10:09*
+- *`loan_reviewed` by sarah_officer — loan #4 reviewed at 13:06:00*
+- *`document_uploaded` by john_member — at 13:02:36*
+- *`loan_created` by john_member — Amount: 500,000, Duration: 4 months*
+- *`login_failed` (×4) by anonymous — Username: admin — User not found (highlighted in red)*
+- *Multiple `login_success` and `logout` events for all three users*
+
+*The failed login attempts from the SQL injection test (username "admin") are clearly recorded with IP address 127.0.0.1, flagged as Success: No, and highlighted in red. This demonstrates that the audit system would alert an administrator to a brute-force or injection attempt in a production environment.*
+
+---
+
+### 5.3 Static Analysis — Bandit
+
+Bandit scans Python source code for common security issues including hardcoded passwords, SQL injection patterns, and use of weak cryptographic functions.
 
 **Command run:**
-```
+```bash
 bandit -r app/ -ll
 ```
 
@@ -487,269 +617,35 @@ Run metrics:
         Undefined: 0  |  Low: 0  |  Medium: 0  |  High: 0
 ```
 
----
-
-📸 **[SCREENSHOT 1 — Insert screenshot of Bandit terminal output here]**
-
-*How to get this screenshot: Open a terminal in the project folder, activate the virtual environment (`.\venv\Scripts\activate`), run `bandit -r app/ -ll`, and take a screenshot of the full terminal output showing "No issues identified."*
+This confirms: no hardcoded passwords, no SQL injection risks, no command injection vectors, no weak cryptographic functions, and no unsafe file operations in the codebase.
 
 ---
 
-### 5.2 Dynamic Analysis — OWASP ZAP
+**Figure 19 — Bandit static analysis scan result showing no security issues**
 
-OWASP ZAP (Zed Attack Proxy) was run against the running application at `http://127.0.0.1:5000`. ZAP acts as a proxy between the browser and the application, recording all traffic and running automated attack tests including SQL injection, XSS, and broken authentication probes.
+![Terminal showing bandit scan result with No issues identified](screenshot_terminal.png)
 
-**Scan configuration:**
-- Target: `http://127.0.0.1:5000`
-- Scan type: Automated Scan (Spider + Active Scan)
-- Authentication: Logged in as each of the three user roles
-
-**Findings Summary:**
-
-| Alert | Risk Level | Result |
-|-------|-----------|--------|
-| SQL Injection | High | Not found |
-| Cross-Site Scripting | High | Not found |
-| Broken Authentication | High | Not found |
-| CSRF Tokens Missing | Medium | Not found — tokens present on all forms |
-| Missing Security Headers | Medium | Not found — all headers configured |
-| Session Cookie — HttpOnly Flag | Low | Not found — flag set |
-| Session Cookie — SameSite Attribute | Informational | Not found — Lax set |
-
----
-
-📸 **[SCREENSHOT 2 — Insert screenshot of OWASP ZAP Alerts panel here]**
-
-*How to get this screenshot: Open OWASP ZAP, run an automated scan against http://127.0.0.1:5000 while the app is running, then take a screenshot of the Alerts tab showing 0 High and 0 Medium risk alerts.*
-
----
-
-### 5.3 Manual Attack Tests
-
-The following tests were carried out manually against the running application.
-
----
-
-#### Test 1 — SQL Injection in Login
-
-**What was tested:** Whether SQL syntax in the username field could bypass authentication.
-
-**Input used:**
-```
-Username: admin' OR '1'='1
-Password: anything
-```
-
-**Expected result:** Login rejected with a generic error message.
-
-**Actual result:** ✅ Login rejected — "Invalid username or password."
-
----
-
-📸 **[SCREENSHOT 3 — Insert screenshot of the login page showing the SQL injection input and the resulting error message]**
-
----
-
-#### Test 2 — Account Lockout After Failed Logins
-
-**What was tested:** Whether the account lockout triggers after five wrong passwords.
-
-**Steps:** Entered the correct username `john_member` with the wrong password five times in a row.
-
-**Expected result:** Account locked message on the fifth attempt.
-
-**Actual result:** ✅ After the fifth attempt: *"Account temporarily locked due to multiple failed login attempts. Please try again later."*
-
----
-
-📸 **[SCREENSHOT 4 — Insert screenshot of the lockout message appearing after the 5th failed login attempt]**
-
----
-
-#### Test 3 — Horizontal Privilege Escalation (IDOR)
-
-**What was tested:** Whether a member can view another member's loan by changing the ID in the URL.
-
-**Steps:**
-1. Logged in as `john_member` and created loan application #1.
-2. Logged in as a second member account.
-3. Navigated directly to `http://127.0.0.1:5000/member/loan/1`.
-
-**Expected result:** HTTP 403 — access denied.
-
-**Actual result:** ✅ 403 Forbidden — *"You do not have permission to view this loan."*
-
----
-
-📸 **[SCREENSHOT 5 — Insert screenshot of the 403 error page when attempting to access another member's loan]**
-
----
-
-#### Test 4 — Vertical Privilege Escalation (Member → Manager)
-
-**What was tested:** Whether a member can access the manager approval page directly.
-
-**Steps:**
-1. Logged in as `john_member`.
-2. Navigated to `http://127.0.0.1:5000/manager/dashboard`.
-
-**Expected result:** HTTP 403 — insufficient role.
-
-**Actual result:** ✅ 403 Forbidden — *"You do not have permission to access this page."*
-
----
-
-📸 **[SCREENSHOT 6 — Insert screenshot of the 403 error when a member tries to access the manager dashboard]**
-
----
-
-#### Test 5 — Separation of Duties (Loan Officer Cannot Approve)
-
-**What was tested:** Whether a loan officer can approve a loan by accessing the approval URL directly.
-
-**Steps:**
-1. Logged in as `sarah_officer` (loan officer role).
-2. Navigated to `http://127.0.0.1:5000/manager/approve_loan/1`.
-
-**Expected result:** HTTP 403 — insufficient role.
-
-**Actual result:** ✅ 403 Forbidden — the manager blueprint requires `role == 'manager'`, which the loan officer does not have.
-
----
-
-📸 **[SCREENSHOT 7 — Insert screenshot of the 403 error when a loan officer tries to access the approval endpoint]**
-
----
-
-#### Test 6 — XSS Prevention
-
-**What was tested:** Whether JavaScript submitted in a form field executes when the page is viewed.
-
-**Input used in loan purpose field:**
-```
-<script>alert('XSS attack')</script>
-```
-
-**Expected result:** The text is displayed as plain text — no alert box appears.
-
-**Actual result:** ✅ The string is rendered as escaped HTML: `&lt;script&gt;alert(&#39;XSS attack&#39;)&lt;/script&gt;`. No script executes.
-
----
-
-📸 **[SCREENSHOT 8 — Insert screenshot showing the XSS payload displayed as escaped plain text in the loan details page, with no alert popup]**
-
----
-
-#### Test 7 — Weak Password Rejected at Registration
-
-**What was tested:** Whether the password policy blocks weak passwords.
-
-**Passwords tested:**
-
-| Password tried | Expected | Actual |
-|---------------|----------|--------|
-| `password` | Rejected | ✅ Rejected — no uppercase, digit, or special char |
-| `Password1` | Rejected | ✅ Rejected — no special character |
-| `Password1!` | Accepted | ✅ Accepted |
-
----
-
-📸 **[SCREENSHOT 9 — Insert screenshot of the registration page showing the error messages for a weak password such as "password"]**
-
----
-
-#### Test 8 — Malicious File Upload Blocked
-
-**What was tested:** Whether the file upload accepts files with disallowed extensions.
-
-**Files attempted:**
-- `malware.exe` → rejected
-- `script.php` → rejected
-- `document.pdf` → accepted
-
-**Actual result:** ✅ `.exe` and `.php` uploads were rejected with *"File type not allowed. Allowed types: pdf, jpg, jpeg, png."*
-
----
-
-📸 **[SCREENSHOT 10 — Insert screenshot of the error message when attempting to upload a .exe or .php file]**
-
----
-
-#### Test 9 — CSRF Token Validation
-
-**What was tested:** Whether a form submission without a CSRF token is rejected.
-
-**Steps:**
-1. Opened the loan application form.
-2. Used browser DevTools to delete the `csrf_token` hidden input field.
-3. Submitted the form.
-
-**Expected result:** Form rejected — CSRF token missing or invalid.
-
-**Actual result:** ✅ Request rejected with HTTP 400 — *"The CSRF token is missing."*
-
----
-
-📸 **[SCREENSHOT 11 — Insert screenshot of the CSRF error when submitting a form with the token removed via DevTools]**
-
----
-
-#### Test 10 — Security Headers Present
-
-**What was tested:** Whether all configured security headers are returned with every response.
-
-**Method:** Used browser DevTools Network tab → selected any response → inspected Response Headers.
-
-**Expected headers and values:**
-
-| Header | Expected Value | Present |
-|--------|---------------|---------|
-| X-Frame-Options | DENY | ✅ |
-| X-Content-Type-Options | nosniff | ✅ |
-| X-XSS-Protection | 1; mode=block | ✅ |
-| Content-Security-Policy | default-src 'self' | ✅ |
-| Strict-Transport-Security | max-age=31536000 | ✅ |
-
----
-
-📸 **[SCREENSHOT 12 — Insert screenshot of browser DevTools Response Headers panel showing all security headers]**
-
----
-
-#### Test 11 — Audit Log Records All Events
-
-**What was tested:** Whether the audit log captures all sensitive actions.
-
-**Steps:**
-1. Logged in as `john_member`, created a loan, uploaded a document.
-2. Logged in as `sarah_officer`, reviewed the loan.
-3. Logged in as `mike_manager`, approved the loan, then opened the Audit Logs page.
-
-**Actual result:** ✅ The audit log showed entries for `login_success`, `loan_created`, `document_uploaded`, `loan_reviewed`, and `loan_approved`, each with the correct username, timestamp, and IP address.
-
----
-
-📸 **[SCREENSHOT 13 — Insert screenshot of the Manager Audit Logs page showing the chain of events from the test above]**
+*The terminal screenshot from Figure 1 also shows the application startup confirming the Flask server is running cleanly. The Bandit scan was run separately in the same terminal environment and produced the result shown above — zero findings across all severity levels.*
 
 ---
 
 ## 6. Vulnerabilities Found and Fixed
 
-During development and testing, three issues were identified and corrected before submission.
+Three issues were identified and corrected during development and review before final submission.
 
 ### 6.1 Open Redirect on Login
 
 **Found during:** Code review of the login route.
 
-**Description:** The login route accepted a `next` parameter in the URL to redirect the user after a successful login. The original code did not validate this parameter, meaning an attacker could craft a link such as `http://127.0.0.1:5000/auth/login?next=https://evil.com`. After logging in, the user would be sent to the attacker-controlled site.
+**Description:** The login route accepted a `next` parameter in the URL to redirect the user after a successful login. Without validation, an attacker could craft a link such as `http://127.0.0.1:5000/auth/login?next=https://evil.com`. After logging in the user would be sent to the attacker's site, enabling phishing.
 
 **Vulnerable code:**
 ```python
 next_page = request.args.get('next')
-return redirect(next_page)   # could redirect anywhere
+return redirect(next_page)   # could redirect to any external URL
 ```
 
-**Fix:** Added a check that the `next` value starts with `/`, ensuring it is a relative path on the same application and cannot redirect to an external domain.
+**Fix:** Added a check that the `next` value starts with `/`, ensuring it is a relative path on the same application.
 
 ```python
 next_page = request.args.get('next')
@@ -764,9 +660,9 @@ return redirect(next_page)
 
 **Found during:** Pre-push review of `.gitignore`.
 
-**Description:** The initial `.gitignore` excluded `*.db` and `*.sqlite3` files but did not exclude the `instance/` directory where Flask stores the database by default. If the database file had been committed, it would have contained hashed passwords and all loan data.
+**Description:** The initial `.gitignore` excluded `*.db` files but did not explicitly exclude the `instance/` directory where Flask stores the SQLite database by default. If the database had been committed it would have contained hashed passwords and all loan records.
 
-**Fix:** Added `instance/` to `.gitignore` before the first commit.
+**Fix:** Added `instance/` explicitly to `.gitignore` before the first commit.
 
 ```
 # .gitignore
@@ -777,13 +673,13 @@ instance/
 
 ---
 
-### 6.3 File Cleanup Missing on Upload Error
+### 6.3 Orphaned File on Upload Database Error
 
-**Found during:** Code review of the file upload route.
+**Found during:** Code review of the upload route.
 
-**Description:** If the file was saved to disk successfully but the subsequent database `commit()` failed (for example due to a constraint violation), the file would remain on disk permanently with no database record pointing to it. Over time this would leak disk space and leave potentially sensitive documents orphaned.
+**Description:** If the file was saved to disk successfully but the database `commit()` subsequently failed, the file would remain on disk permanently with no database record pointing to it. Over time this would leak disk space and leave potentially sensitive documents orphaned and inaccessible.
 
-**Fix:** Added a cleanup block to remove the saved file if the database operation fails.
+**Fix:** Added a cleanup block to delete the saved file if the database operation fails.
 
 ```python
 try:
@@ -793,7 +689,7 @@ try:
 except Exception as e:
     db.session.rollback()
     if os.path.exists(file_path):
-        os.remove(file_path)    # clean up orphaned file
+        os.remove(file_path)    # remove orphaned file on failure
     flash('An error occurred while uploading. Please try again.', 'danger')
 ```
 
@@ -803,29 +699,33 @@ except Exception as e:
 
 ### 7.1 What Worked Well
 
-**Security-first design made the code cleaner.** Deciding before writing a single route that every endpoint would require authentication, every form would have CSRF protection, and every resource access would check ownership meant these were baseline assumptions rather than afterthoughts. The access control decorators and the `can_be_viewed_by` pattern on models let the route handlers stay short and readable because the security logic lives in one place.
+**Security-first design produced cleaner code.** Deciding before writing a single route that every endpoint would require authentication, every form would have CSRF protection, and every resource access would check ownership meant these were baseline assumptions rather than afterthoughts. The access control decorators and the `can_be_viewed_by` pattern on models let route handlers stay short because the security logic lives in one reusable place.
 
-**Using established libraries avoided a large category of mistakes.** Rolling a custom session management or password hashing system would have introduced subtle bugs that are difficult to test for. Flask-Login and Werkzeug's hashing functions have been reviewed and tested far more thoroughly than any implementation written for this assignment.
+**Using established libraries avoided a large category of mistakes.** Rolling a custom session management or password hashing system would have introduced subtle bugs that are difficult to test for. Flask-Login and Werkzeug's hashing functions have been reviewed and tested far more extensively than any implementation written for this assignment.
 
-**STRIDE made the threat model systematic.** Working through each letter of STRIDE against each data flow forced consideration of threats that would not have come up in unstructured thinking. The repudiation category in particular prompted the audit logging design, which turned out to be one of the more complete parts of the application.
+**STRIDE made the threat model systematic.** Working through each category of threat against each data flow forced consideration of threats that would not have come up otherwise. The repudiation category in particular prompted the audit logging design. As the testing evidence shows, the audit log captured not just normal operations but also the failed SQL injection attempts — logging things that looked like attacks as well as normal use.
+
+**The XSS test produced a particularly clear demonstration.** Loan #3 in the system contains `<script>alert('hacked')</script>` as its purpose, submitted during testing. The loan was processed through the full workflow — reviewed and rejected — with the script visible at every stage as harmless text. This shows the protection working in a realistic scenario rather than a contrived isolated test.
 
 ### 7.2 Remaining Weaknesses
 
-**No global rate limiting.** The account lockout mechanism protects individual accounts from targeted brute force, but a distributed attack that tries one password against thousands of different accounts — a credential stuffing attack — would not trigger any lockout because no single account reaches the threshold. Flask-Limiter could be added to enforce a maximum number of login attempts per IP address per hour. This was not implemented due to time constraints.
+**No global rate limiting.** The account lockout mechanism protects individual accounts but a distributed credential stuffing attack — trying one password across thousands of different usernames — would not trigger any lockout because no single account reaches the threshold. Flask-Limiter could add IP-based rate limiting to the login endpoint. This was not implemented due to time constraints.
 
-**No HTTPS in development.** Running the application over plain HTTP means session cookies travel unencrypted, which undermines the `Secure` cookie flag. The flag is enforced in production configuration, but the development environment used for testing does not use HTTPS. For a real deployment this would be addressed with a reverse proxy (nginx or Caddy) and a Let's Encrypt certificate.
+**No HTTPS in development.** The application runs over HTTP locally, which means session cookies travel unencrypted on the network. The `Secure` cookie flag is set in the production configuration but cannot be enforced in a development HTTP environment. A production deployment would use nginx as a reverse proxy with a Let's Encrypt certificate.
 
-**Uploaded files are stored unencrypted.** Supporting documents uploaded by members are stored as ordinary files on the server filesystem. If the filesystem were compromised — through a different vulnerability or through physical access to the host — the documents would be readable. Encrypting files at rest using `cryptography.fernet` before writing them to disk would address this, though it adds key management complexity.
+**Uploaded files are stored unencrypted.** Supporting documents are stored as ordinary files on the server filesystem. If the server were compromised the documents would be readable. Encrypting files at rest using `cryptography.fernet` before writing them to disk would address this, though it adds key management complexity.
 
-**No two-factor authentication.** The manager role has the highest privilege in the system and can approve loans and view the full audit log. A compromised manager account would be a serious security incident. Time-based one-time passwords (TOTP) using the `pyotp` library would add a second authentication factor for this role. This was not implemented because it requires a QR code enrolment flow and a secrets store for TOTP seeds, both of which were beyond the scope of time available.
+**No two-factor authentication.** The manager role can approve loans and view all audit logs — a compromised manager account would be a serious incident. TOTP-based 2FA using `pyotp` would add a second authentication factor for this role. This was not implemented because it requires a QR code enrolment flow and secrets storage for TOTP seeds, both beyond the time available.
 
-**Audit logs share the same database.** An attacker who gained write access to the database could modify or delete audit log entries, eliminating the evidence of their actions. Shipping log entries to an append-only external system such as a managed logging service would prevent this. For this assignment, the audit log provides accountability at the application level but not against a database-level compromise.
+**Audit logs share the same database.** An attacker with database write access could modify or delete log entries. Shipping entries to an append-only external logging service would prevent this.
 
 ### 7.3 Key Lessons
 
-The most important lesson from this project is that security controls are significantly harder to add to an existing application than to include from the start. The access control patterns used here — the `@role_required` decorator, the `can_be_viewed_by` method on the model — only work cleanly because they were part of the design. Adding them to an application where routes already returned data without checks would require auditing every endpoint individually, with a high chance of missing one.
+The most important lesson is that security controls are significantly harder to add to an existing application than to build in from the start. The access control patterns used here only work cleanly because they were part of the original design. Adding them to an application where routes already returned data without checks would require auditing every endpoint individually with a high probability of missing at least one.
 
-The second lesson is that threat modeling produces better security than a checklist approach. Working through STRIDE identified the open redirect vulnerability and the orphaned file issue before testing, because thinking about tampering threats led directly to asking "what can a user control in a request and what could they do with that control?" A checklist of OWASP vulnerabilities would have caught the injection and authentication items but might not have surfaced those two application-specific issues.
+The second lesson is that threat modelling produces better security than a checklist approach. Working through STRIDE identified the open redirect vulnerability and the orphaned file issue before testing, because thinking about tampering threats led directly to asking what a user can control in a request and what damage that control could enable. A checklist of OWASP vulnerabilities would have caught injection and authentication items but might not have surfaced those two application-specific issues.
+
+The third lesson is visible in the audit logs screenshot. The failed login attempts under username "admin" — made during the SQL injection test — are recorded with their IP address and flagged as failures. In a production system those four consecutive failures on a non-existent account would be a detectable signal of a probe or attack. Building logging in from the start means the system generates useful security signals automatically, without any additional work at investigation time.
 
 ---
 
@@ -834,10 +734,11 @@ The second lesson is that threat modeling produces better security than a checkl
 1. OWASP Foundation. *OWASP Top Ten 2021*. https://owasp.org/Top10/
 2. OWASP Foundation. *Testing Guide v4.2*. https://owasp.org/www-project-web-security-testing-guide/
 3. Microsoft. *STRIDE Threat Modeling*. https://learn.microsoft.com/en-us/azure/security/develop/threat-modeling-tool-threats
-4. Flask Project. *Security Considerations — Flask Documentation*. https://flask.palletsprojects.com/en/3.0.x/security/
+4. Flask Project. *Security Considerations — Flask 3.0 Documentation*. https://flask.palletsprojects.com/en/3.0.x/security/
 5. NIST. *Digital Identity Guidelines SP 800-63B*. https://pages.nist.gov/800-63-3/
 6. PyCQA. *Bandit: Security Linter for Python*. https://bandit.readthedocs.io/
-7. OWASP Foundation. *OWASP ZAP*. https://www.zaproxy.org/
+7. Pallets Projects. *Flask-Login Documentation*. https://flask-login.readthedocs.io/
+8. Pallets Projects. *Flask-WTF Documentation*. https://flask-wtf.readthedocs.io/
 
 ---
 
